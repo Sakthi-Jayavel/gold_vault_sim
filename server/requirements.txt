@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pycryptodome
+pydantic>=2.0.0
+sqlalchemy
+aiosqlite
+python-dotenv
+streamlit
+requests
+matplotlib
+psycopg2-binary
