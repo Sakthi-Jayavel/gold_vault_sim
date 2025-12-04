@@ -7,29 +7,16 @@ from sqlalchemy.orm import Session
 import server.database as database
 from server import verify_logic
 
-...
 
-status, reasons = verify_logic.classify_event(
-    payload_dict,
-    hash_valid=hash_valid,
-    signature_valid=signature_valid,
-)
+class IngestPacket(BaseModel):
+    vault_id: str
+    bar_id: str
+    timestamp: str
 
-# Store to DB
-db_event = VaultEvent(
-    timestamp=payload_dict.get("timestamp"),
-    vault_id=payload_dict.get("vault_id"),
-    bar_id=payload_dict.get("bar_id"),
-    rfid_uid=payload_dict.get("rfid_uid"),
-    purity=float(payload_dict.get("purity", 0.0)),
-    tamper_status=payload_dict.get("tamper_status"),
-    vault_door_status=payload_dict.get("vault_door_status"),
-    status=status,
-    reason="; ".join(reasons) if reasons else "",
-    # gps_lat / gps_lon can be set to None or 0 if your model still has them
-    # gps_lat=None,
-    # gps_lon=None,
-)
+    payload_ciphertext: str
+    iv: str
+    hash_sha3_256: str
+    signature: str
 
 
 class IngestResponse(BaseModel):
@@ -56,20 +43,20 @@ def on_startup():
 
 @app.post("/ingest", response_model=IngestResponse)
 def ingest(packet: IngestPacket, db: Session = Depends(get_db)):
-    # Convert Pydantic object to primitive dict
+    print("[Server] /ingest called")
+
     packet_dict: Dict[str, Any] = packet.dict()
 
-    # Verify & decrypt
     sensor_data, result = verify_logic.verify_and_decrypt_packet(packet_dict)
 
-    # Log to console (good for screenshots in paper)
     print("\n[Server] Received packet:")
     print(f"  Vault: {sensor_data.get('vault_id')} | Bar: {sensor_data.get('bar_id')}")
     print(f"  RFID: {sensor_data.get('rfid_uid')}")
     print(f"  Purity: {sensor_data.get('purity')}")
-    print(f"  GPS: ({sensor_data.get('gps_lat')}, {sensor_data.get('gps_lon')})")
     print(f"  Tamper: {sensor_data.get('tamper_status')}")
+    print(f"  Door: {sensor_data.get('vault_door_status')}")
     print(f"  Status: {result['status']}")
+
     if result["reasons"]:
         print("  Reasons:")
         for r in result["reasons"]:
@@ -77,7 +64,6 @@ def ingest(packet: IngestPacket, db: Session = Depends(get_db)):
     else:
         print("  All security checks passed.")
 
-    # Persist in DB
     database.save_event(db, sensor_data, result)
 
     return IngestResponse(status=result["status"], reasons=result["reasons"])
