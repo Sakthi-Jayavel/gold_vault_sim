@@ -79,26 +79,3 @@ if __name__ == "__main__":
     # Run this file once to generate RSA keys
     generate_and_save_rsa_keys()
 
-def verify_sha3_256_signature(public_key, hash_hex: str, signature: bytes) -> bool:
-    """
-    Verify an RSA-3072 signature over a SHA3-256 hash.
-
-    public_key : RSA public key object
-    hash_hex   : hex string of SHA3-256(message)
-    signature  : raw signature bytes
-
-    Returns True if valid, False otherwise.
-    """
-    try:
-        public_key.verify(
-            signature,
-            bytes.fromhex(hash_hex),
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA3_256()),
-                salt_length=padding.PSS.MAX_LENGTH,
-            ),
-            hashes.SHA3_256(),
-        )
-        return True
-    except Exception:
-        return False

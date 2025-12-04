@@ -3,7 +3,7 @@ import json
 from typing import Any, Dict, List, Tuple
 
 from gateway.crypto.aes_utils import decrypt_aes_cbc
-from gateway.crypto.rsa_utils import load_private_key, sign_sha3_256
+from gateway.crypto.rsa_utils import load_public_key, verify_sha3_256
 from gateway.crypto.sha3_utils import sha3_256_bytes
 
 EXPECTED_RFID = "TAG12345"
@@ -33,9 +33,8 @@ def verify_and_decrypt_packet(packet: Dict[str, Any]) -> Tuple[Dict[str, Any], D
         if digest_local != digest_packet:
             reasons.append("SHA3-256 hash mismatch.")
 
-        private_key = load_private_key()
-        expected_sig = sign_sha3_256(private_key, digest_packet)
-        if expected_sig != sig_packet:
+        public_key = load_public_key()
+        if not verify_sha3_256(public_key, digest_packet, sig_packet):
             reasons.append("RSA signature mismatch.")
 
         sensor_data = json.loads(plaintext.decode("utf-8"))
