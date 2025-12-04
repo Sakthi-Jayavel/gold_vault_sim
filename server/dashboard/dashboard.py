@@ -1,5 +1,6 @@
 import os
 import sys
+
 import streamlit as st
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -7,44 +8,50 @@ from sqlalchemy.orm import Session
 # -------------------------------------------
 # FIX PYTHON PATH FOR STREAMLIT
 # -------------------------------------------
+
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-# Now import works
-from server.database import SessionLocal, VaultEvent
+# Now import DB session + model
+from server.database import SessionLocal, VaultEvent  # type: ignore
 
 
 # -------------------------------------------
 # LOAD EVENTS FROM DB
 # -------------------------------------------
-def load_events():
+
+def load_events() -> pd.DataFrame:
+    """
+    Read all vault events from the database and return as a DataFrame.
+    Only uses the core fields that we know exist.
+    """
     db: Session = SessionLocal()
-    events = db.query(VaultEvent).order_by(VaultEvent.created_at.desc()).all()
-    db.close()
+    try:
+        events = (
+            db.query(VaultEvent)
+            .order_by(VaultEvent.created_at.desc())
+            .all()
+        )
+    finally:
+        db.close()
 
     rows = []
     for e in events:
-        rows.append({
-            "Time": e.timestamp,
-            "Vault": e.vault_id,
-            "Bar": e.bar_id,
-            "RFID": e.rfid_uid,
-            "Purity": e.purity,
-            "GPS Lat": e.gps_lat,
-            "GPS Lon": e.gps_lon,
-            "Tamper": e.tamper_status,
-            "Door": e.vault_door_status,
-            "Status": e.status,
-            "Reason": e.reason,
-            "Hash OK": e.hash_ok,
-            "Signature OK": e.signature_ok,
-            "RFID OK": e.rfid_ok,
-            "GPS OK": e.gps_ok,
-            "Purity OK": e.purity_ok,
-            "Tamper OK": e.tamper_ok,
-            "Door OK": e.door_ok,
-        })
+        rows.append(
+            {
+                "Time": e.timestamp,
+                "Vault": e.vault_id,
+                "Bar": e.bar_id,
+                "RFID": getattr(e, "rfid_uid", None),
+                "Purity": getattr(e, "purity", None),
+                "Tamper": getattr(e, "tamper_status", None),
+                "Door": getattr(e, "vault_door_status", None),
+                "Status": getattr(e, "status", None),
+                "Reason": getattr(e, "reason", None),
+            }
+        )
+
     return pd.DataFrame(rows)
 
 
@@ -55,7 +62,7 @@ def load_events():
 st.set_page_config(
     page_title="Secure Gold Vault Monitor",
     layout="wide",
-    page_icon="🟡",
+    page_icon="🪙",
 )
 
 st.title("🔐 Secure Gold Vault Monitoring Dashboard")
@@ -66,20 +73,27 @@ df = load_events()
 if df.empty:
     st.warning("No events found in database yet. Run the gateway to generate logs.")
 else:
-    # Status filter
-    filt_status = st.selectbox(
-        "Filter by status:", ["ALL", "SECURE", "BREACH"], index=0
-    )
+    # --- Status Filter ---
+    status_options = ["ALL", "OK", "WARN", "ALERT", "BREACH"]
+    filt_status = st.selectbox("Filter by status:", status_options, index=0)
 
-    if filt_status != "ALL":
-        df = df[df["Status"] == filt_status]
+    # Normalize to upper-case for comparisons
+    df["Status"] = df["Status"].astype(str)
+
+    if filt_status == "ALL":
+        filtered_df = df
+    elif filt_status == "BREACH":
+        # Treat BREACH as equivalent to ALERT events
+        filtered_df = df[df["Status"].str.upper() == "ALERT"]
+    else:
+        filtered_df = df[df["Status"].str.upper() == filt_status]
 
     # Show latest events
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(filtered_df, use_container_width=True)
 
-    # Breach summary
-    breaches = df[df["Status"] == "BREACH"]
-    if not breaches.empty:
-        st.error(f"⚠ Total Breaches: {len(breaches)}")
+    # Breach summary is always based on ALERT (breach) events
+    breach_df = df[df["Status"].str.upper() == "ALERT"]
+    if not breach_df.empty:
+        st.error(f"⚠ Total breaches (ALERT events): {len(breach_df)}")
     else:
         st.success("No breaches detected.")
